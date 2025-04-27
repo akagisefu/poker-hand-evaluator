@@ -9,24 +9,62 @@
 
 <body>
     <div class="container">
-        <h1>ポーカー役判定システム</h1>
-        <div class="input-section">
-            <textarea id="cards-input" placeholder="カードを入力（例: AH 10S KD QC JH）"></textarea>
-            <button onclick="evaluateHand()">判定する</button>
+        <h1>2-7 Single Draw 勝率計算</h1>
+
+        <div class="player-section">
+            <h2>プレイヤー1</h2>
+            <div class="card-selector" id="player1-selector">
+                <!-- カード画像がここにJSで生成される -->
+            </div>
+            <div class="selected-cards" id="player1-selected">
+                選択中のカード (最大5枚):
+            </div>
         </div>
+
+        <div class="player-section">
+            <h2>プレイヤー2</h2>
+            <div class="card-selector" id="player2-selector">
+                <!-- カード画像がここにJSで生成される -->
+            </div>
+            <div class="selected-cards" id="player2-selected">
+                選択中のカード (最大5枚):
+            </div>
+        </div>
+
+        <div class="action-section">
+            <button onclick="calculateWinRate()">勝率を計算する</button>
+            <p><small>※各プレイヤーで5枚未満のカードを選択した場合、残りはランダムにドローされます。</small></p>
+        </div>
+
         <div class="result-section">
-            <h2>判定結果</h2>
-            <div id="result-details">
-                <p><strong>ハンド名:</strong> <span id="hand-name">-</span></p>
-                <p><strong>ハンドタイプ:</strong> <span id="hand-type">-</span></p>
-                <p><strong>ソート済みランク:</strong> <span id="sorted-ranks">-</span></p>
-                <hr>
-                <h3>勝率 (vs ランダムハンド)</h3>
-                <p><strong>勝率:</strong> <span id="win-rate">-</span>%</p>
-                <p><strong>引き分け率:</strong> <span id="tie-rate">-</span>%</p>
-                <p><strong>敗北率:</strong> <span id="loss-rate">-</span>%</p>
-                <p><small>(シミュレーション回数: <span id="simulations">-</span>)</small></p>
-                <p id="win-rate-error" class="error-message" style="display: none;"></p>
+            <h2>計算結果</h2>
+            <div id="result-display" style="display: none;">
+                <div class="player-result">
+                    <h3>プレイヤー1</h3>
+                    <p>ドロー後のハンド: <span id="p1-final-hand">-</span></p>
+                    <p>ハンド名: <span id="p1-hand-name">-</span></p>
+                    <h4>ハンド確率</h4>
+                    <ul id="p1-hand-probs">
+                        <!-- 確率がここにJSで表示される -->
+                    </ul>
+                </div>
+                <div class="player-result">
+                    <h3>プレイヤー2</h3>
+                    <p>ドロー後のハンド: <span id="p2-final-hand">-</span></p>
+                    <p>ハンド名: <span id="p2-hand-name">-</span></p>
+                    <h4>ハンド確率</h4>
+                    <ul id="p2-hand-probs">
+                        <!-- 確率がここにJSで表示される -->
+                    </ul>
+                </div>
+                <div class="matchup-result">
+                    <h3>勝率</h3>
+                    <p>プレイヤー1の勝率: <span id="p1-win-rate">-</span>%</p>
+                    <p>引き分け率: <span id="tie-rate">-</span>%</p>
+                    <p>プレイヤー2の勝率: <span id="p2-win-rate">-</span>%</p>
+                    <p><small>(シミュレーション回数: <span id="simulations">-</span>)</small></p>
+                    <p id="calc-error" class="error-message" style="display: none;"></p>
+                </div>
             </div>
             <div id="error-message" class="error-message" style="display: none;"></div>
         </div>

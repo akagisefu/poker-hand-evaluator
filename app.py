@@ -1,9 +1,28 @@
 from flask import Flask, jsonify, request, render_template
 from collections import Counter
-import random # 勝率計算のために追加
-from itertools import combinations # デッキ生成用
+import random
+from itertools import combinations # 組み合わせ計算に必要
 
 app = Flask(__name__)
+
+# --- 定数 ---
+RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+SUITS = ['H', 'D', 'S', 'C']
+FULL_DECK = frozenset([r + s for r in RANKS for s in SUITS])
+RANK_MAP = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+RANK_MAP_REV = {v: k for k, v in RANK_MAP.items()}
+
+# 2-7SD ハンドカテゴリ (確率計算用)
+# 注意: Bad Hand は Straight/Flush を含むため、個別のカテゴリより上に配置
+HAND_CATEGORIES_27SD = [
+    "7-High", "8-High", "9-High", "10-High", "J-High", "Q-High", "K-High", "A-High", # No Pair
+    "One Pair", "Two Pair", "Three of a Kind",
+    "Bad Hand (Straight/Flush)", # ストレートとフラッシュ
+    "Full House", "Four of a Kind"
+]
+# 確率表示順序のためのマップ (カテゴリ名 -> ソート順)
+HAND_CATEGORY_ORDER = {name: i for i, name in enumerate(HAND_CATEGORIES_27SD)}
+
 
 # --- カード検証 ---
 def validate_card(card):
@@ -15,48 +34,15 @@ def validate_card(card):
     valid_suits = ['H','D','S','C']
     return rank in valid_ranks and suit in valid_suits
 
-def evaluate_poker_hand(cards):
-    ranks = [card[:-1].upper() for card in cards]
-    suits = [card[-1].upper() for card in cards]
-    
-    rank_counts = Counter(ranks)
-    suit_counts = Counter(suits)
-    
-    # ポーカー役判定ロジック
-    if len(set(suits)) == 1 and set(ranks) == {'10','J','Q','K','A'}:
-        return 'ロイヤルストレートフラッシュ'
-    
-    if len(set(suits)) == 1 and is_straight(ranks):
-        return 'ストレートフラッシュ'
-    
-    if 4 in rank_counts.values():
-        return 'フォーカード'
-    
-    if sorted(rank_counts.values()) == [2,3]:
-        return 'フルハウス'
-    
-    if len(set(suits)) == 1:
-        return 'フラッシュ'
-    
-    if is_straight(ranks):
-        return 'ストレート'
-    
-    if 3 in rank_counts.values():
-        return 'スリーカード'
-    
-    if list(rank_counts.values()).count(2) == 2:
-        return 'ツーペア'
-    
-    if 2 in rank_counts.values():
-        return 'ワンペア'
-    
-    return 'ハイカード'
+# evaluate_poker_hand は不要になったので削除 or コメントアウト
+# def evaluate_poker_hand(cards): ...
 
+# --- is_straight (変更なし) ---
 def is_straight(ranks):
     # 2-7SDではAはハイカードとしてのみ扱うため、A-2-3-4-5はストレートではない
     # 5-4-3-2-Aのような並びもストレートではない
-    rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
-    numeric_ranks = sorted([rank_map[r] for r in set(ranks)]) # 重複を除いてソート
+    # rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14} # グローバル定数を使用
+    numeric_ranks = sorted([RANK_MAP[r] for r in set(ranks)]) # 重複を除いてソート
 
     if len(numeric_ranks) < 5: # ペアなどがある場合はストレートではない
         return False
@@ -67,8 +53,15 @@ def is_straight(ranks):
     is_straight_seq = all(numeric_ranks[i] == numeric_ranks[0] + i for i in range(len(numeric_ranks)))
     return is_straight_seq
 
+# --- evaluate_27sd_hand (変更なし) ---
 def evaluate_27sd_hand(cards):
     """2-7 Single Drawのハンドを評価する関数"""
+    # 入力チェック
+    if not cards or len(cards) != 5:
+        # 評価不能なハンド（エラー処理を呼び出し元で行うか、ここで例外を発生させる）
+        # ここでは仮に ('Invalid', []) を返す
+        return 'Invalid', []
+
     ranks = [card[:-1].upper() for card in cards]
     suits = [card[-1].upper() for card in cards]
 
@@ -80,15 +73,10 @@ def evaluate_27sd_hand(cards):
 
     # ストレートやフラッシュは悪いハンド
     if is_straight_hand or is_flush_hand:
-        # ストレートフラッシュやロイヤルは考慮不要 (通常のポーカーとは逆)
-        # 単純にストレートかフラッシュがあれば、それはペアなどより悪いハンドとして扱うことが多いが、
-        # ここではまず役の種類を返すことにする。比較ロジックは別途必要。
-        # 簡単のため、ここでは「悪いハンド」としてマークするだけにする
-        # より詳細な比較のためには、ハイカード情報も保持する必要がある
         hand_type = "Bad Hand (Straight/Flush)"
         # ハイカード順にランクを返す (Aが一番高い)
-        rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
-        sorted_numeric_ranks = sorted([rank_map[r] for r in ranks], reverse=True)
+        # rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14} # グローバル定数を使用
+        sorted_numeric_ranks = sorted([RANK_MAP[r] for r in ranks], reverse=True)
         return hand_type, sorted_numeric_ranks
 
     # ペア系の判定
@@ -96,59 +84,174 @@ def evaluate_27sd_hand(cards):
     threes = [rank for rank, count in rank_counts.items() if count == 3]
     fours = [rank for rank, count in rank_counts.items() if count == 4]
 
-    rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
-    sorted_numeric_ranks = sorted([rank_map[r] for r in ranks], reverse=True) # 降順ソート
+    # rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14} # グローバル定数を使用
+    sorted_numeric_ranks = sorted([RANK_MAP[r] for r in ranks], reverse=True) # 降順ソート
 
     if fours:
         hand_type = "Four of a Kind"
-    elif threes and pairs:
-        hand_type = "Full House"
+    # elif threes and pairs: # フルハウスはストレート/フラッシュより強いので先に判定しない
+    #     hand_type = "Full House"
     elif threes:
         hand_type = "Three of a Kind"
     elif len(pairs) == 2:
         hand_type = "Two Pair"
     elif pairs:
         hand_type = "One Pair"
+    # フルハウスの判定をここで行う (ペア系よりは強い)
+    elif threes and pairs: # この条件は実際には起こらない (threes か pairs で先に判定される)
+         # 正しくは Counter の値で判定
+         if sorted(rank_counts.values()) == [2, 3]:
+              hand_type = "Full House"
+         else: # ペアもストレートもフラッシュもない場合 -> ナンバーハンド
+              hand_type = "No Pair" # または "High Card Hand"
     else:
-        # ペアもストレートもフラッシュもない場合 -> ナンバーハンド
-        hand_type = "No Pair" # または "High Card Hand"
+         # ペアもストレートもフラッシュもない場合 -> ナンバーハンド
+         hand_type = "No Pair" # または "High Card Hand"
+
 
     # 2-7SDでは、No Pairハンドが最も良く、その中で数字が小さいほど強い
     # 比較のために、ハンドタイプとソートされたランク（降順）を返す
     return hand_type, sorted_numeric_ranks
 
-# --- 2-7SD ハンド比較関数 ---
+
+# --- ヘルパー関数 ---
+def get_hand_category(hand_type, sorted_ranks):
+    """評価結果から詳細なハンドカテゴリ名を返す"""
+    if hand_type == "No Pair":
+        # sorted_ranks は数値のリスト (降順)
+        if not sorted_ranks: return "Invalid" # 空リスト対策
+        high_card_rank = RANK_MAP_REV.get(sorted_ranks[0], '?') # 不明なランクは?
+        return f"{high_card_rank}-High"
+    # 他のタイプはそのまま返すか、必要なら詳細化
+    return hand_type
+
+def draw_cards(kept_cards, num_to_draw, available_deck):
+    """指定された枚数のカードを利用可能なデッキからランダムに引く"""
+    kept_cards_list = list(kept_cards) # setかもしれないのでリストに変換
+    if num_to_draw <= 0:
+        return kept_cards_list
+    
+    available_deck_list = list(available_deck)
+    if len(available_deck_list) < num_to_draw:
+        # ドローできない場合はエラーを示すか、不完全なハンドを返す
+        # ここでは空リストを追加して返す（呼び出し元でlen==5をチェック）
+        print(f"Warning: Not enough cards in deck to draw {num_to_draw}. Available: {len(available_deck_list)}")
+        # return kept_cards_list # 不完全なハンドを返す
+        # より明確にするため、Noneを返すか例外を投げるべきかもしれない
+        return None # ドロー失敗を示す
+
+    drawn_cards = random.sample(available_deck_list, num_to_draw)
+    return kept_cards_list + drawn_cards
+
+
+# --- 確率計算関数 ---
+def calculate_draw_probabilities(kept_cards, available_deck, num_simulations=5000):
+    """
+    指定されたカードを持ち、残りをドローした場合の最終ハンドカテゴリ確率を計算する。
+    """
+    kept_cards_list = list(kept_cards) # setかもしれないのでリストに変換
+    num_kept = len(kept_cards_list)
+
+    if num_kept > 5: # エラーケース
+         return {'error': 'Kept cards exceed 5'}
+    if num_kept == 5: # すでに5枚持っている場合はドロー不要
+        hand_type, sorted_ranks = evaluate_27sd_hand(kept_cards_list)
+        if hand_type == 'Invalid':
+             return {'error': 'Invalid hand provided'}
+        category = get_hand_category(hand_type, sorted_ranks)
+        # カテゴリが存在するか確認
+        if category not in HAND_CATEGORIES_27SD:
+             print(f"Warning: Unknown category '{category}' generated for hand {kept_cards_list}")
+             # 不明なカテゴリは確率0として扱うか、エラーにするか
+             # ここでは確率0とする
+             probs = {cat: 0.0 for cat in HAND_CATEGORIES_27SD}
+        else:
+             probs = {cat: 1.0 if cat == category else 0.0 for cat in HAND_CATEGORIES_27SD}
+        # 順序通りにソートして返す
+        return dict(sorted(probs.items(), key=lambda item: HAND_CATEGORY_ORDER.get(item[0], float('inf'))))
+
+
+    num_to_draw = 5 - num_kept
+    category_counts = Counter()
+    available_deck_list = list(available_deck)
+
+    if len(available_deck_list) < num_to_draw:
+        return {'error': f'Not enough cards in deck to draw {num_to_draw}'}
+
+    # 全組み合わせを計算
+    possible_draw_combinations = list(combinations(available_deck_list, num_to_draw))
+    total_possible_outcomes = len(possible_draw_combinations)
+
+    # シミュレーション回数を決定 (全組み合わせが少ない場合は全通り計算)
+    actual_simulations = min(num_simulations, total_possible_outcomes)
+
+    if actual_simulations == 0:
+         return {'error': 'No possible draws'} # ドローできる組み合わせがない
+
+    # サンプリングするか全通り計算するか
+    if total_possible_outcomes > num_simulations * 1.5: # 全通りがシミュレーション回数よりかなり多い場合サンプリング
+        simulation_combinations = random.sample(possible_draw_combinations, actual_simulations)
+        total_outcomes_for_prob = actual_simulations # 確率計算の分母
+        print(f"Calculating probabilities via sampling ({actual_simulations} simulations)")
+    else:
+        simulation_combinations = possible_draw_combinations
+        total_outcomes_for_prob = total_possible_outcomes # 確率計算の分母
+        print(f"Calculating probabilities via full enumeration ({total_possible_outcomes} combinations)")
+
+
+    for drawn_cards in simulation_combinations:
+        final_hand = kept_cards_list + list(drawn_cards)
+        if len(final_hand) == 5:
+            hand_type, sorted_ranks = evaluate_27sd_hand(final_hand)
+            if hand_type == 'Invalid': continue # 評価不能なハンドはスキップ
+            category = get_hand_category(hand_type, sorted_ranks)
+            # カテゴリが存在するか確認
+            if category in HAND_CATEGORIES_27SD:
+                 category_counts[category] += 1
+            else:
+                 print(f"Warning: Unknown category '{category}' generated for hand {final_hand}")
+
+
+    # 確率を計算 (カテゴリリストにあるもののみ)
+    probabilities = {cat: category_counts[cat] / total_outcomes_for_prob for cat in HAND_CATEGORIES_27SD}
+    # 順序通りにソートして返す
+    return dict(sorted(probabilities.items(), key=lambda item: HAND_CATEGORY_ORDER.get(item[0], float('inf'))))
+
+
+# --- 2-7SD ハンド比較関数 (変更なし) ---
 def compare_27sd_hands(hand1_eval, hand2_eval):
     """
     2つの2-7SDハンド評価結果を比較し、hand1が勝てば1、hand2が勝てば-1、引き分けなら0を返す。
     hand_eval = (hand_type, sorted_numeric_ranks)
-    2-7SDのランク: No Pair < One Pair < Two Pair < Three of a Kind < Straight/Flush < Full House < Four of a Kind
-    No Pair同士はハイカード（数字が小さい方が強い）で比較。
+    2-7SDのランク (強い順): No Pair < One Pair < Two Pair < Three of a Kind < Bad Hand < Full House < Four of a Kind
     """
     type1, ranks1 = hand1_eval
     type2, ranks2 = hand2_eval
 
+    # ハンドタイプが存在しない、またはランク情報がない場合は比較不能
+    if not type1 or not ranks1 or not type2 or not ranks2:
+        # エラーとして扱うか、特定の値を返す (例: 比較不能を示す None や 例外)
+        # ここでは仮に 0 (引き分け扱い) とするが、要検討
+        print(f"Warning: Cannot compare invalid hands: {hand1_eval} vs {hand2_eval}")
+        return 0
+
     # ハンドタイプの強さ順序 (弱い方から強い方へ)
     # 注意: 2-7SDでは No Pair が最も強く、ペア系やストレート/フラッシュは弱い
-    hand_strength_order = [
-        "No Pair",
-        "One Pair",
-        "Two Pair",
-        "Three of a Kind",
-        "Bad Hand (Straight/Flush)", # ストレートとフラッシュは同等に扱う
-        "Full House",
-        "Four of a Kind"
-    ]
+    # HAND_CATEGORIES_27SD を利用 (ただし、これは表示用カテゴリ名)
+    # 比較用の内部的な強さ順序を定義
+    strength_map = {
+        "No Pair": 0,
+        "One Pair": 1,
+        "Two Pair": 2,
+        "Three of a Kind": 3,
+        "Bad Hand (Straight/Flush)": 4, # ストレートとフラッシュは同等
+        "Full House": 5,
+        "Four of a Kind": 6,
+        "Invalid": float('inf') # 評価不能なハンドは最弱
+    }
 
-    # ハンドタイプを数値に変換 (リストのインデックスを使用。小さいほど強い)
-    try:
-        strength1 = hand_strength_order.index(type1)
-    except ValueError:
-        strength1 = float('inf') # 不明なタイプは最弱扱い（エラーケース）
-    try:
-        strength2 = hand_strength_order.index(type2)
-    except ValueError:
-        strength2 = float('inf')
+    strength1 = strength_map.get(type1, float('inf'))
+    strength2 = strength_map.get(type2, float('inf'))
 
     # ハンドタイプで比較 (数値が小さい方が強い)
     if strength1 < strength2:
@@ -156,153 +259,219 @@ def compare_27sd_hands(hand1_eval, hand2_eval):
     if strength1 > strength2:
         return -1 # hand2 の勝ち
 
-    # ハンドタイプが同じ場合、ランクで比較
+    # --- ハンドタイプが同じ場合、ランクで比較 ---
     # No Pair の場合: 数字が小さい方が強い (例: 7-5-4-3-2 > 8-5-4-3-2)
     if type1 == "No Pair":
-        for r1, r2 in zip(ranks1, ranks2): # ランクは降順ソート済み
+        # ranks1, ranks2 は数値のリスト (降順ソート済み)
+        for r1, r2 in zip(ranks1, ranks2):
             if r1 < r2:
-                return 1 # hand1 の勝ち
+                return 1 # hand1 の勝ち (数字が小さい)
             if r1 > r2:
-                return -1 # hand2 の勝ち
+                return -1 # hand2 の勝ち (数字が小さい)
         return 0 # 引き分け
 
-    # ペア系、ストレート/フラッシュの場合: 数字が大きい方が強い (通常のポーカーと同じ)
+    # ペア系、ストレート/フラッシュの場合: 数字が大きい方が強い (通常のポーカーと同じ kicker 勝負)
     # (ただし、これらのハンドはNo Pairより弱い)
     else:
-        for r1, r2 in zip(ranks1, ranks2): # ランクは降順ソート済み
+        # ranks1, ranks2 は数値のリスト (降順ソート済み)
+        for r1, r2 in zip(ranks1, ranks2):
             if r1 > r2:
-                return 1 # hand1 の勝ち
+                return 1 # hand1 の勝ち (数字が大きい)
             if r1 < r2:
-                return -1 # hand2 の勝ち
+                return -1 # hand2 の勝ち (数字が大きい)
         return 0 # 引き分け
 
-# --- 勝率計算関数 (モンテカルロ法) ---
-def calculate_win_rate(my_cards, num_simulations=10000):
+
+# --- 勝率計算関数 (ドロー考慮) ---
+def calculate_post_draw_win_rate(p1_kept, p2_kept, num_simulations=10000):
     """
-    与えられた手札 (my_cards) の2-7SDにおける勝率をモンテカルロ法で概算する。
+    各プレイヤーが指定カードを持ち、残りをドローした後の勝率を計算する。
     """
-    wins = 0
+    p1_wins = 0
+    p2_wins = 0
     ties = 0
-    losses = 0
+    invalid_sims = 0
 
-    # デッキの準備
-    ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
-    suits = ['H','D','S','C']
-    deck = [r + s for r in ranks for s in suits]
+    p1_kept_set = set(p1_kept)
+    p2_kept_set = set(p2_kept)
+    initial_deck = FULL_DECK - p1_kept_set - p2_kept_set
+    num_to_draw_p1 = 5 - len(p1_kept_set)
+    num_to_draw_p2 = 5 - len(p2_kept_set)
 
-    # 自分の手札をデッキから削除
-    remaining_deck = [card for card in deck if card not in my_cards]
+    if len(initial_deck) < num_to_draw_p1 + num_to_draw_p2:
+        return {'error': 'デッキの残りが少なく、シミュレーションできません'}
 
-    if len(remaining_deck) < 5:
-        return {'error': 'デッキの残りが少なく、シミュレーションできません'} # エラーケース
+    print(f"Starting win rate simulation ({num_simulations} runs)...")
+    print(f"P1 keeps: {p1_kept}, needs {num_to_draw_p1}")
+    print(f"P2 keeps: {p2_kept}, needs {num_to_draw_p2}")
+    print(f"Deck size for drawing: {len(initial_deck)}")
 
-    my_hand_eval = evaluate_27sd_hand(my_cards)
 
-    for _ in range(num_simulations):
-        # 相手の手札をランダムに選択
-        opponent_cards = random.sample(remaining_deck, 5)
-        opponent_hand_eval = evaluate_27sd_hand(opponent_cards)
+    for i in range(num_simulations):
+        if i % (num_simulations // 10) == 0 and i > 0: # 進捗表示 (10%ごと)
+             print(f"... {i}/{num_simulations} simulations done")
 
-        # ハンド比較
-        result = compare_27sd_hands(my_hand_eval, opponent_hand_eval)
+        available_deck_list = list(initial_deck) # 各シミュレーションでデッキをコピー
 
+        # プレイヤー1のドロー
+        p1_final_hand_list = draw_cards(p1_kept_set, num_to_draw_p1, available_deck_list)
+        if p1_final_hand_list is None: # ドロー失敗
+             invalid_sims += 1
+             continue
+        p1_final_hand = tuple(p1_final_hand_list) # 評価関数はリストを受け取るが、内部で使うためタプルに
+        
+        # P1が引いたカードをデッキから除く
+        drawn_by_p1 = set(p1_final_hand) - p1_kept_set
+        available_deck_after_p1_draw = initial_deck - drawn_by_p1
+
+        # プレイヤー2のドロー
+        p2_final_hand_list = draw_cards(p2_kept_set, num_to_draw_p2, available_deck_after_p1_draw)
+        if p2_final_hand_list is None: # ドロー失敗
+             invalid_sims += 1
+             continue
+        p2_final_hand = tuple(p2_final_hand_list)
+
+        # ハンド評価と勝敗判定
+        p1_eval = evaluate_27sd_hand(list(p1_final_hand)) # 評価関数はリストを期待
+        p2_eval = evaluate_27sd_hand(list(p2_final_hand)) # 評価関数はリストを期待
+
+        # 評価結果が不正でないかチェック
+        if p1_eval[0] == 'Invalid' or p2_eval[0] == 'Invalid':
+             invalid_sims += 1
+             continue
+
+        result = compare_27sd_hands(p1_eval, p2_eval)
         if result == 1:
-            wins += 1
+            p1_wins += 1
         elif result == -1:
-            losses += 1
+            p2_wins += 1
         else:
             ties += 1
 
-    total_simulations = wins + losses + ties
-    if total_simulations == 0:
-        return {'win_rate': 0, 'tie_rate': 0, 'loss_rate': 0, 'simulations': 0}
+    total_valid_simulations = p1_wins + p2_wins + ties
+    print(f"Simulation finished. Valid runs: {total_valid_simulations}, Invalid runs: {invalid_sims}")
 
-    win_rate = wins / total_simulations
-    tie_rate = ties / total_simulations
-    loss_rate = losses / total_simulations
+    if total_valid_simulations == 0:
+        # 有効なシミュレーションが0回の場合
+        if invalid_sims > 0:
+             return {'error': f'All simulations resulted in invalid draws ({invalid_sims} attempts). Check deck logic.'}
+        else:
+             return {'player1_wins': 0, 'player2_wins': 0, 'ties': 0, 'simulations': 0}
+
 
     return {
-        'win_rate': win_rate,
-        'tie_rate': tie_rate,
-        'loss_rate': loss_rate,
-        'simulations': total_simulations
+        'player1_wins': p1_wins / total_valid_simulations,
+        'player2_wins': p2_wins / total_valid_simulations,
+        'ties': ties / total_valid_simulations,
+        'simulations': total_valid_simulations
     }
 
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/api/evaluate', methods=['POST'])
-def evaluate():
+# --- 新しいAPIエンドポイント ---
+@app.route('/api/calculate', methods=['POST'])
+def calculate_api():
     try:
         data = request.json
-        cards = data.get('cards', [])
-        
-        if len(cards) != 5:
-            return jsonify({'error': '5枚のカードを入力してください'}), 400
-            
-        invalid_cards = [card for card in cards if not validate_card(card)]
+        p1_cards_input = data.get('player1_cards', [])
+        p2_cards_input = data.get('player2_cards', [])
+
+        # 入力バリデーション
+        if len(p1_cards_input) > 5 or len(p2_cards_input) > 5:
+            return jsonify({'error': '各プレイヤーの手札は最大5枚までです'}), 400
+
+        # frozenset に変換して処理
+        p1_cards = frozenset(p1_cards_input)
+        p2_cards = frozenset(p2_cards_input)
+
+        all_selected_cards = p1_cards.union(p2_cards)
+        invalid_cards = [card for card in all_selected_cards if not validate_card(card)]
         if invalid_cards:
             return jsonify({'error': f'無効なカード形式: {", ".join(invalid_cards)}'}), 400
 
-        # 2-7SDの評価関数を呼び出す
-        hand_type, sorted_ranks = evaluate_27sd_hand(cards)
+        if len(all_selected_cards) != len(p1_cards) + len(p2_cards):
+             # このチェックは frozenset を使っているので不要 (重複は自動で除去される)
+             # ただし、p1 と p2 で同じカードが選択された場合のチェックは必要
+             if not p1_cards.isdisjoint(p2_cards):
+                  return jsonify({'error': 'プレイヤー間で同じカードが選択されています'}), 400
 
-        # ランクと数値のマッピング (ソート用と逆引き用)
-        rank_map_sort = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
-        rank_map_rev = {v: k for k, v in rank_map_sort.items()}
-        rank_str = [rank_map_rev[r] for r in sorted_ranks]
 
-        # 2-7SDのハンド名を生成 (例: "7-5-4-3-2", "King High", "Pair of Aces")
-        if hand_type == "No Pair":
-            # No Pairの場合、ハイカードでハンド名を表現 (例: 7-5-4-3-2)
-            hand_name = "-".join(rank_str)
-        elif hand_type == "One Pair":
-            pair_rank = [r for r, c in Counter(rank_str).items() if c == 2][0]
-            kickers = sorted([r for r in rank_str if r != pair_rank], key=lambda x: rank_map_sort[x], reverse=True)
-            hand_name = f"Pair of {pair_rank}s ({'-'.join(kickers)} kickers)"
-        elif hand_type == "Two Pair":
-             pairs_ranks = sorted([r for r, c in Counter(rank_str).items() if c == 2], key=lambda x: rank_map_sort[x], reverse=True)
-             kicker = [r for r in rank_str if rank_str.count(r) == 1][0]
-             hand_name = f"Two Pair, {pairs_ranks[0]}s and {pairs_ranks[1]}s ({kicker} kicker)"
-        elif hand_type == "Three of a Kind":
-            three_rank = [r for r, c in Counter(rank_str).items() if c == 3][0]
-            kickers = sorted([r for r in rank_str if r != three_rank], key=lambda x: rank_map_sort[x], reverse=True)
-            hand_name = f"Three of a Kind, {three_rank}s ({'-'.join(kickers)} kickers)"
-        elif hand_type == "Bad Hand (Straight/Flush)":
-             # ストレートやフラッシュの場合もハイカードで表現
-             hand_name = f"{hand_type}: {'-'.join(rank_str)}"
-        elif hand_type == "Full House":
-            three_rank = [r for r, c in Counter(rank_str).items() if c == 3][0]
-            pair_rank = [r for r, c in Counter(rank_str).items() if c == 2][0]
-            hand_name = f"Full House, {three_rank}s full of {pair_rank}s"
-        elif hand_type == "Four of a Kind":
-            four_rank = [r for r, c in Counter(rank_str).items() if c == 4][0]
-            kicker = [r for r in rank_str if r != four_rank][0]
-            hand_name = f"Four of a Kind, {four_rank}s ({kicker} kicker)"
-        else:
-             hand_name = hand_type # フォールバック
+        # デッキ準備 (確率計算用と勝率計算用で共有可能)
+        deck_minus_selection = FULL_DECK - all_selected_cards
 
-        # 勝率計算を実行
-        win_rate_result = calculate_win_rate(cards) # num_simulationsはデフォルト値を使用
+        # ハンド確率計算
+        print("Calculating P1 probabilities...")
+        p1_probabilities = calculate_draw_probabilities(p1_cards, deck_minus_selection)
+        print("Calculating P2 probabilities...")
+        p2_probabilities = calculate_draw_probabilities(p2_cards, deck_minus_selection)
+
+        # 勝率計算 (ドロー考慮)
+        print("Calculating win rates...")
+        win_rates = calculate_post_draw_win_rate(p1_cards, p2_cards) # 関数には set を渡す
+
+        # --- 結果の整形 ---
+        # ドロー後のハンド例を一つ生成 (表示用)
+        p1_final_hand_example_list = draw_cards(p1_cards, 5 - len(p1_cards), deck_minus_selection)
+        if p1_final_hand_example_list is None: p1_final_hand_example_list = list(p1_cards) # ドロー失敗時は保持カードのみ
+
+        deck_after_p1_draw = deck_minus_selection - (set(p1_final_hand_example_list) - p1_cards)
+        p2_final_hand_example_list = draw_cards(p2_cards, 5 - len(p2_cards), deck_after_p1_draw)
+        if p2_final_hand_example_list is None: p2_final_hand_example_list = list(p2_cards) # ドロー失敗時は保持カードのみ
+
+        # 評価とハンド名取得 (5枚揃っているか確認)
+        p1_final_eval = evaluate_27sd_hand(p1_final_hand_example_list) if len(p1_final_hand_example_list) == 5 else ('Invalid', [])
+        p2_final_eval = evaluate_27sd_hand(p2_final_hand_example_list) if len(p2_final_hand_example_list) == 5 else ('Invalid', [])
+
+        p1_hand_name = get_hand_category(p1_final_eval[0], p1_final_eval[1]) if p1_final_eval[0] != 'Invalid' else "N/A"
+        p2_hand_name = get_hand_category(p2_final_eval[0], p2_final_eval[1]) if p2_final_eval[0] != 'Invalid' else "N/A"
+
+        # ハンド例をソートして見やすくする
+        p1_final_hand_sorted = sorted(p1_final_hand_example_list, key=lambda c: RANK_MAP.get(c[:-1], 0))
+        p2_final_hand_sorted = sorted(p2_final_hand_example_list, key=lambda c: RANK_MAP.get(c[:-1], 0))
+
 
         response_data = {
-            'hand_type': hand_type,
-            'sorted_ranks': rank_str,
-            'hand_name': hand_name,
-            'details': f'入力カード: {", ".join(cards)}',
+            'player1': {
+                'final_hand': p1_final_hand_sorted,
+                'hand_name': p1_hand_name,
+                'probabilities': p1_probabilities # エラーが含まれる可能性あり
+            },
+            'player2': {
+                'final_hand': p2_final_hand_sorted,
+                'hand_name': p2_hand_name,
+                'probabilities': p2_probabilities # エラーが含まれる可能性あり
+            },
+            'win_rates': win_rates # エラーが含まれる可能性あり
         }
-        # 勝率計算結果を追加 (エラーがあればエラーメッセージを、なければ勝率などを追加)
-        if 'error' in win_rate_result:
-             response_data['win_rate_error'] = win_rate_result['error']
-        else:
-             response_data.update(win_rate_result) # win_rate, tie_rateなどを辞書に追加
+        # エラーがあればトップレベルにも追加 (フロントで扱いやすくするため)
+        if isinstance(p1_probabilities, dict) and 'error' in p1_probabilities:
+             response_data['error'] = response_data.get('error', '') + f" P1 Prob Error: {p1_probabilities['error']}"
+        if isinstance(p2_probabilities, dict) and 'error' in p2_probabilities:
+             response_data['error'] = response_data.get('error', '') + f" P2 Prob Error: {p2_probabilities['error']}"
+        if isinstance(win_rates, dict) and 'error' in win_rates:
+             response_data['win_rate_error'] = win_rates['error'] # これは専用フィールドに
+
 
         return jsonify(response_data)
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # より詳細なエラーログをサーバー側に出力
+        import traceback
+        print("--- Error in /api/calculate ---")
+        traceback.print_exc()
+        print("--- End Error ---")
+        return jsonify({'error': f'サーバー内部で予期せぬエラーが発生しました: {type(e).__name__}'}), 500
 
+
+# --- index ルート (変更なし) ---
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+# --- 古い /api/evaluate は削除 ---
+# @app.route('/api/evaluate', methods=['POST']) ...
+
+# --- サーバー起動 ---
 if __name__ == '__main__':
-    app.run(debug=True)
+    # 本番環境では gunicorn を使うため、app.run は開発時のみ
+    # Render などでは Start Command で gunicorn を指定する
+    app.run(debug=True) # 開発時は True のまま
