@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ポーカー役判定</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <h1>ポーカー役判定システム</h1>
+        <div class="input-section">
+            <textarea id="cards-input" placeholder="カードを入力（例: AH 10S KD QC JH）"></textarea>
+            <button onclick="evaluateHand()">判定する</button>
+        </div>
+        <div class="result-section">
+            <h2>判定結果</h2>
+            <div id="result-details">
+                <p><strong>ハンド名:</strong> <span id="hand-name">-</span></p>
+                <p><strong>ハンドタイプ:</strong> <span id="hand-type">-</span></p>
+                <p><strong>ソート済みランク:</strong> <span id="sorted-ranks">-</span></p>
+                <hr>
+                <h3>勝率 (vs ランダムハンド)</h3>
+                <p><strong>勝率:</strong> <span id="win-rate">-</span>%</p>
+                <p><strong>引き分け率:</strong> <span id="tie-rate">-</span>%</p>
+                <p><strong>敗北率:</strong> <span id="loss-rate">-</span>%</p>
+                <p><small>(シミュレーション回数: <span id="simulations">-</span>)</small></p>
+                <p id="win-rate-error" class="error-message" style="display: none;"></p>
+            </div>
+            <div id="error-message" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/poker.js') }}"></script>
+</body>
+
+</html>
