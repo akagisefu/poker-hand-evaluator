@@ -122,6 +122,33 @@ h3 {
     cursor: not-allowed;
 }
 
+/* スートごとの色付け */
+.card-button.suit-h,
+.card-button.suit-d {
+    color: #e63946;
+    /* 赤系 */
+}
+
+.card-button.suit-h.selected,
+/* 選択時の文字色反転 */
+.card-button.suit-d.selected {
+    color: #fff;
+}
+
+
+.card-button.suit-s,
+.card-button.suit-c {
+    color: #1d3557;
+    /* 黒系 (濃い青) */
+}
+
+.card-button.suit-s.selected,
+/* 選択時の文字色反転 */
+.card-button.suit-c.selected {
+    color: #fff;
+}
+
+
 /* 選択中カード表示エリア */
 .selected-cards {
     font-size: 0.9em;

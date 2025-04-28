@@ -15,7 +15,16 @@ function createCardElement(card, playerId) {
     const cardButton = document.createElement('button');
     cardButton.classList.add('card-button'); // 新しいクラス名
     cardButton.dataset.card = card; // カード情報をdata属性に保持
-    cardButton.textContent = card; // ボタンのテキストをカード名に設定
+
+    // スート文字を記号に変換
+    const rank = card.slice(0, -1);
+    const suitChar = card.slice(-1);
+    const suitSymbols = { 'H': '♥', 'D': '♦', 'S': '♠', 'C': '♣' };
+    const suitSymbol = suitSymbols[suitChar] || suitChar; // マッピングにない場合は元の文字
+
+    cardButton.textContent = rank + suitSymbol; // ボタンのテキストをランク+記号に設定
+    // スートに応じて色を付けることも可能 (CSSでクラスを追加)
+    cardButton.classList.add(`suit-${suitChar.toLowerCase()}`); // 例: suit-h, suit-d
 
     cardButton.addEventListener('click', () => handleCardClick(card, playerId));
     return cardButton;
