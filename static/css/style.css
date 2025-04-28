@@ -55,9 +55,10 @@ h3 {
 /* カードセレクター */
 .card-selector {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-    /* カードサイズに合わせて調整 */
-    gap: 8px;
+    grid-template-columns: repeat(13, 1fr);
+    /* 列数を13に固定 */
+    gap: 4px;
+    /* ボタン間の隙間を少し狭める */
     margin-bottom: 15px;
     padding: 10px;
     background-color: #e9ecef;
